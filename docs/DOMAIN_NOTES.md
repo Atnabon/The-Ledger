@@ -6,6 +6,8 @@
 
 **Answer**: This is **Event-Driven Architecture (EDA)**, not Event Sourcing (ES).
 
+**The primary distinction is durability and role**: EDA events **can be dropped** — a callback handler that crashes, is misconfigured, or is overwhelmed simply never receives the event, and the system continues without it. ES events **are never lost** — they are the permanent, immutable record; the system's entire state is derived from them and cannot exist without them.
+
 LangChain callbacks produce events-as-messages: they flow through handlers, may be dropped, can be duplicated, and are not the source of truth for system state. The callback data is a **side-channel** — the actual state of the system (the agent's decisions, the application's status) exists elsewhere, typically in memory or a CRUD database. If the callback handler crashes, the data is lost. If you replay the callbacks, you do not reconstruct the system's state — you reconstruct a log of observations.
 
 **If redesigned using The Ledger**, the architecture changes fundamentally:
@@ -64,11 +66,15 @@ With separate aggregates: the `ComplianceAgent` writes to `compliance-{id}` and 
 
 **What it must do next**:
 1. Reload the stream: `events = await store.load_stream("loan-APP-001")`
-2. Reconstruct the aggregate: the new state now includes Agent A's `CreditAnalysisCompleted` event
-3. Re-evaluate whether its own analysis is still relevant (Rule 3: model version locking may now reject it)
-4. If still valid, retry with `expected_version=4`
+2. Reconstruct the aggregate: replay all events including Agent A's `CreditAnalysisCompleted` at position 4
+3. **Inspect the new event**: examine Agent A's event — what model version did it use? what risk tier did it produce? does it conflict with or supersede Agent B's analysis?
+4. **Determine whether its action is still valid**:
+   - If Agent A's `CreditAnalysisCompleted` already satisfies the business need → **abandon**: the work is done, appending a second credit analysis would violate Rule 3 (model version locking). Agent B logs the abandonment for audit and exits.
+   - If the aggregate state has advanced past `AWAITING_ANALYSIS` → **abandon**: the state machine no longer accepts a credit analysis event; retrying would raise a `DomainError`. Agent B exits.
+   - If Agent B's analysis used a different model version and the business rules permit a second analysis (e.g., a HumanReviewOverride has been applied) → **retry** with `expected_version=4`
+5. If retrying: reconstruct the updated event with the new business context and call `store.append(..., expected_version=4)`
 
-The retry is not automatic — the agent must re-evaluate its business logic because the aggregate state has changed.
+**The key principle**: The retry is not automatic and must not be a blind re-execution. The agent re-evaluates business logic against the updated aggregate state. In most concurrent credit analysis scenarios, the correct outcome is abandonment — not retry — because the stream already contains a valid analysis from Agent A.
 
 ---
 
@@ -88,7 +94,7 @@ The retry is not automatic — the agent must re-evaluate its business logic bec
 - **For critical reads, offer a strong-consistency path**: The MCP resource `ledger://applications/{id}/audit-trail` loads directly from the event stream (justified exception). If the loan officer needs the authoritative current state, they query the audit trail, not the projection.
 - **UI communication**: Show a subtle indicator — "Refreshing..." — when the projection is known to be behind. Auto-refresh after the SLO window (500ms for ApplicationSummary).
 
-**The architectural principle**: Eventual consistency is acceptable for read models. The source of truth (the event stream) is always strongly consistent. The projection is an optimization, not the authority. Sub-500ms projection lag is an accepted engineering tradeoff in this design — it is **not a system fault or error condition**. The 500ms SLO window for `ApplicationSummary` is a design parameter, not a failure threshold. Queries that arrive within that window receive stale-but-consistent data; the event stream remains the authoritative source at all times. Treating sub-500ms lag as a fault would incorrectly alert oncall and mask real failures (e.g., the daemon crash that causes lag to grow to minutes).
+**The architectural principle**: Eventual consistency is acceptable for read models. The source of truth (the event stream) is always strongly consistent. The projection is an optimization, not the authority. Sub-500ms projection lag is an **expected operating condition** in this design — it is by design, not a fault. A system that pages oncall when lag is 200ms has misconfigured its alerting; the alert threshold should trigger when lag exceeds the SLO window (e.g., >2 seconds for `ApplicationSummary`), not at the normal operating value. The 500ms SLO window is a design parameter. Queries that arrive within that window receive stale-but-consistent data; the event stream remains the authoritative source at all times.
 
 ---
 
