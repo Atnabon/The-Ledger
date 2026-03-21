@@ -209,11 +209,7 @@ async def handle_fraud_screening_completed(
     """Record the completion of fraud screening."""
     app = await LoanApplicationAggregate.load(store, cmd.application_id)
 
-    if not app.credit_analysis_completed:
-        raise DomainError(
-            "Credit analysis must complete before fraud screening",
-            rule="analysis_ordering",
-        )
+    app.assert_credit_analysis_complete()
 
     event = FraudScreeningCompleted.create(
         application_id=cmd.application_id,
@@ -240,11 +236,8 @@ async def handle_generate_decision(
     """Generate a decision for the loan application."""
     app = await LoanApplicationAggregate.load(store, cmd.application_id)
 
-    # Validate: both credit and fraud analysis must be complete
-    if not app.credit_analysis_completed:
-        raise DomainError("Credit analysis required before decision", rule="analysis_required")
-    if not app.fraud_screening_completed:
-        raise DomainError("Fraud screening required before decision", rule="analysis_required")
+    # Validate: both analyses must be complete before a decision can be generated
+    app.assert_analyses_complete_for_decision()
 
     # Rule 4: Confidence floor enforcement
     recommendation = app.assert_valid_orchestrator_decision(

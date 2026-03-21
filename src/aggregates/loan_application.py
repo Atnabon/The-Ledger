@@ -179,6 +179,27 @@ class LoanApplicationAggregate:
                 rule="model_version_locking",
             )
 
+    def assert_credit_analysis_complete(self) -> None:
+        """Assert that credit analysis has been completed before proceeding."""
+        if not self.credit_analysis_completed:
+            raise DomainError(
+                "Credit analysis must complete before fraud screening can be recorded.",
+                rule="analysis_ordering",
+            )
+
+    def assert_analyses_complete_for_decision(self) -> None:
+        """Assert that both credit analysis and fraud screening are complete."""
+        if not self.credit_analysis_completed:
+            raise DomainError(
+                "Credit analysis is required before a decision can be generated.",
+                rule="analysis_required",
+            )
+        if not self.fraud_screening_completed:
+            raise DomainError(
+                "Fraud screening is required before a decision can be generated.",
+                rule="analysis_required",
+            )
+
     def assert_confidence_floor(self, confidence_score: float) -> str:
         """Rule 4: Confidence floor — score < 0.6 forces REFER."""
         if confidence_score < 0.6:
