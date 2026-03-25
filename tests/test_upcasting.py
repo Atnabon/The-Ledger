@@ -309,3 +309,68 @@ async def test_upcast_chain():
     assert "added_in_v2" not in v1_event.payload
 
     print("\n--- Upcast Chain Test PASSED ---")
+
+
+@pytest.mark.asyncio
+async def test_tamper_detection(pool, store: EventStore):
+    """
+    THE TAMPER DETECTION TEST:
+
+    1. Insert events and run integrity check (should pass)
+    2. Directly modify a stored event payload in the DB (simulating tampering)
+    3. Re-run integrity check — must detect tamper_detected = True
+    """
+    from src.integrity.audit_chain import run_integrity_check
+
+    stream_id = "loan-TAMPER-001"
+    app_id = "TAMPER-001"
+
+    # Create events through the normal path
+    from src.models.events import ApplicationSubmitted, CreditAnalysisRequested
+
+    e1 = ApplicationSubmitted.create(
+        application_id=app_id,
+        applicant_id="applicant-tamper",
+        requested_amount_usd=500_000.0,
+        loan_purpose="tamper test",
+    )
+    await store.append(stream_id=stream_id, events=[e1], expected_version=-1)
+
+    e2 = CreditAnalysisRequested.create(
+        application_id=app_id,
+        assigned_agent_id="agent-tamper-001",
+    )
+    await store.append(stream_id=stream_id, events=[e2], expected_version=1)
+
+    # Step 1: Run integrity check — should pass (clean chain)
+    result_clean = await run_integrity_check(store, "loan", app_id)
+    assert result_clean.chain_valid is True, "Clean chain should be valid"
+    assert result_clean.tamper_detected is False, "No tampering should be detected"
+    assert result_clean.events_verified == 2
+
+    print(f"\n  Clean check: chain_valid={result_clean.chain_valid}, "
+          f"tamper_detected={result_clean.tamper_detected}")
+
+    # Step 2: Tamper with a stored event payload directly in the DB
+    async with pool.acquire() as conn:
+        # Modify the first event's payload — simulating a malicious edit
+        await conn.execute(
+            """UPDATE events SET payload = payload || '{"tampered": true}'::jsonb
+               WHERE stream_id = $1 AND stream_position = 1""",
+            stream_id,
+        )
+
+    # Step 3: Re-run integrity check — must detect tampering
+    result_tampered = await run_integrity_check(store, "loan", app_id)
+    assert result_tampered.tamper_detected is True, (
+        "Tampering was NOT detected after modifying a stored event payload. "
+        "The integrity check must detect that the recomputed hash differs from "
+        "the previously recorded hash."
+    )
+    assert result_tampered.chain_valid is False, (
+        "Chain should be invalid after tampering"
+    )
+
+    print(f"  Tampered check: chain_valid={result_tampered.chain_valid}, "
+          f"tamper_detected={result_tampered.tamper_detected}")
+    print("--- Tamper Detection Test PASSED ---")

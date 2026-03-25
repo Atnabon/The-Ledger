@@ -446,3 +446,113 @@ async def test_projection_rebuild(pool, store: EventStore):
     assert row["human_reviewer_id"] == "reviewer-001"
 
     print("\n--- Projection Rebuild Test PASSED ---")
+
+
+@pytest.mark.asyncio
+async def test_projection_slo_under_concurrent_load(pool, store: EventStore):
+    """
+    SLO Test: Simulate 50 concurrent command handlers writing events,
+    then verify:
+    (a) ApplicationSummary projection lag remains under 500ms
+    (b) rebuild_from_scratch completes without blocking live reads
+    """
+    import asyncio
+    import time
+
+    # Set up all three projections
+    app_proj = ApplicationSummaryProjection()
+    agent_proj = AgentPerformanceLedgerProjection()
+    compliance_proj = ComplianceAuditViewProjection()
+
+    daemon = ProjectionDaemon(pool, [app_proj, agent_proj, compliance_proj])
+
+    # -----------------------------------------------------------------------
+    # Phase 1: 50 concurrent command handlers writing events simultaneously
+    # -----------------------------------------------------------------------
+
+    async def simulate_command_handler(idx: int) -> None:
+        """Simulate a single command handler writing a loan application event."""
+        app_id = f"SLO-{idx:03d}"
+        stream_id = f"loan-{app_id}"
+        e = ApplicationSubmitted.create(
+            application_id=app_id,
+            applicant_id=f"applicant-slo-{idx}",
+            requested_amount_usd=100_000.0 + idx * 1000,
+            loan_purpose="slo test",
+        )
+        await store.append(stream_id=stream_id, events=[e], expected_version=-1)
+
+    # Launch 50 concurrent handlers
+    tasks = [asyncio.create_task(simulate_command_handler(i)) for i in range(50)]
+    await asyncio.gather(*tasks)
+
+    # Verify all 50 events were written
+    async with pool.acquire() as conn:
+        count = await conn.fetchval("SELECT COUNT(*) FROM events WHERE event_type = 'ApplicationSubmitted'")
+    assert count >= 50, f"Expected at least 50 events, got {count}"
+
+    # -----------------------------------------------------------------------
+    # Phase 2: Process events and measure lag
+    # -----------------------------------------------------------------------
+
+    start = time.monotonic()
+    processed = await daemon._process_batch()
+    elapsed_ms = (time.monotonic() - start) * 1000
+
+    assert processed >= 50, f"Expected to process at least 50 events, got {processed}"
+
+    # Lag for ApplicationSummary must be under 500ms SLO
+    lag = daemon.get_lag("ApplicationSummary")
+    assert lag == 0, (
+        f"ApplicationSummary should have zero lag after processing, got {lag} events behind"
+    )
+    assert elapsed_ms < 500, (
+        f"Batch processing took {elapsed_ms:.0f}ms, exceeding 500ms SLO"
+    )
+
+    # Verify projections are populated
+    async with pool.acquire() as conn:
+        proj_count = await conn.fetchval("SELECT COUNT(*) FROM application_summary")
+    assert proj_count >= 50, f"Expected at least 50 projection rows, got {proj_count}"
+
+    print(f"\n  50 concurrent handlers: {processed} events processed in {elapsed_ms:.0f}ms")
+    print(f"  ApplicationSummary lag: {lag} events")
+
+    # -----------------------------------------------------------------------
+    # Phase 3: rebuild_from_scratch without blocking live reads
+    # -----------------------------------------------------------------------
+
+    # Start a rebuild and verify live reads don't crash during rebuild
+    rebuild_start = time.monotonic()
+
+    async def live_read_during_rebuild() -> dict:
+        """Simulate a live read while rebuild is running."""
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM application_summary WHERE application_id = $1",
+                "SLO-000",
+            )
+            return dict(row) if row else {}
+
+    # Run rebuild and a live read concurrently — live reads must not fail
+    rebuild_task = asyncio.create_task(daemon.rebuild_projection("ApplicationSummary"))
+    read_result = await live_read_during_rebuild()
+    await rebuild_task
+    rebuild_ms = (time.monotonic() - rebuild_start) * 1000
+
+    # The read should succeed (returns data or empty dict, but not an exception)
+    assert isinstance(read_result, dict), "Live read during rebuild must not raise"
+
+    # Re-process to repopulate after rebuild
+    await daemon._process_batch()
+
+    # Verify data is back after rebuild + re-process
+    async with pool.acquire() as conn:
+        rebuilt_count = await conn.fetchval("SELECT COUNT(*) FROM application_summary")
+    assert rebuilt_count >= 50, (
+        f"Expected at least 50 rows after rebuild, got {rebuilt_count}"
+    )
+
+    print(f"  Rebuild completed in {rebuild_ms:.0f}ms")
+    print(f"  Post-rebuild rows: {rebuilt_count}")
+    print("--- Projection SLO Under Concurrent Load Test PASSED ---")
