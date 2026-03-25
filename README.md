@@ -139,12 +139,3 @@ The system follows Event Sourcing + CQRS:
 4. **Outbox pattern** — events written to outbox in same transaction for guaranteed downstream delivery
 5. **Async projections with SLOs** — ApplicationSummary < 500ms lag, ComplianceAuditView < 2s lag
 6. **UpcasterRegistry** — transparent event schema evolution without mutating stored events
-
-## Submission Status
-
-- [x] Phase 1: Event Store Core (schema, EventStore class, OCC)
-- [x] Phase 2: Domain Logic (4 aggregates, 6 business rules, 6 command handlers)
-- [x] Phase 3: Projections & Async Daemon (3 projections, fault-tolerant daemon)
-- [x] Phase 4: Upcasting & Integrity (registry, hash chain, Gas Town recovery)
-- [x] Phase 5: MCP Server (8 tools, 6 resources, structured errors)
-- [x] Phase 6: What-If Projector & Regulatory Package (bonus)
