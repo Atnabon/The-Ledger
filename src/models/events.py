@@ -599,10 +599,518 @@ class AuditIntegrityCheckRun(BaseEvent):
 
 
 # =============================================================================
+# AgentSession Aggregate Events (continued)
+# =============================================================================
+
+class AgentInputValidated(BaseEvent):
+    event_type: str = "AgentInputValidated"
+
+    @classmethod
+    def create(
+        cls,
+        agent_id: str,
+        session_id: str,
+        inputs_validated: list[str],
+        validation_duration_ms: int,
+    ) -> AgentInputValidated:
+        return cls(
+            payload={
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "inputs_validated": inputs_validated,
+                "validation_duration_ms": validation_duration_ms,
+            }
+        )
+
+
+class AgentInputValidationFailed(BaseEvent):
+    event_type: str = "AgentInputValidationFailed"
+
+    @classmethod
+    def create(
+        cls,
+        agent_id: str,
+        session_id: str,
+        missing_inputs: list[str],
+        validation_errors: list[str],
+    ) -> AgentInputValidationFailed:
+        return cls(
+            payload={
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "missing_inputs": missing_inputs,
+                "validation_errors": validation_errors,
+            }
+        )
+
+
+class AgentToolCalled(BaseEvent):
+    event_type: str = "AgentToolCalled"
+
+    @classmethod
+    def create(
+        cls,
+        agent_id: str,
+        session_id: str,
+        tool_name: str,
+        tool_input_summary: str,
+        tool_output_summary: str,
+        tool_duration_ms: int,
+    ) -> AgentToolCalled:
+        return cls(
+            payload={
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "tool_name": tool_name,
+                "tool_input_summary": tool_input_summary,
+                "tool_output_summary": tool_output_summary,
+                "tool_duration_ms": tool_duration_ms,
+            }
+        )
+
+
+class AgentOutputWritten(BaseEvent):
+    event_type: str = "AgentOutputWritten"
+
+    @classmethod
+    def create(
+        cls,
+        agent_id: str,
+        session_id: str,
+        events_written: list[dict[str, Any]],
+        output_summary: str,
+    ) -> AgentOutputWritten:
+        return cls(
+            payload={
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "events_written": events_written,
+                "output_summary": output_summary,
+            }
+        )
+
+
+class AgentSessionRecovered(BaseEvent):
+    event_type: str = "AgentSessionRecovered"
+
+    @classmethod
+    def create(
+        cls,
+        agent_id: str,
+        session_id: str,
+        recovered_from_session_id: str,
+        recovery_point: str,
+    ) -> AgentSessionRecovered:
+        return cls(
+            payload={
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "recovered_from_session_id": recovered_from_session_id,
+                "recovery_point": recovery_point,
+            }
+        )
+
+
+# =============================================================================
+# DocumentPackage Aggregate Events
+# =============================================================================
+
+class DocumentPackageCreated(BaseEvent):
+    event_type: str = "DocumentPackageCreated"
+
+    @classmethod
+    def create(
+        cls,
+        package_id: str,
+        application_id: str,
+        created_at: str,
+    ) -> DocumentPackageCreated:
+        return cls(
+            payload={
+                "package_id": package_id,
+                "application_id": application_id,
+                "created_at": created_at,
+            }
+        )
+
+
+class DocumentAdded(BaseEvent):
+    event_type: str = "DocumentAdded"
+
+    @classmethod
+    def create(
+        cls,
+        package_id: str,
+        document_type: str,
+        file_path: str,
+    ) -> DocumentAdded:
+        return cls(
+            payload={
+                "package_id": package_id,
+                "document_type": document_type,
+                "file_path": file_path,
+            }
+        )
+
+
+class DocumentFormatValidated(BaseEvent):
+    event_type: str = "DocumentFormatValidated"
+
+    @classmethod
+    def create(
+        cls,
+        package_id: str,
+        document_type: str,
+        format_valid: bool,
+        validation_notes: str,
+    ) -> DocumentFormatValidated:
+        return cls(
+            payload={
+                "package_id": package_id,
+                "document_type": document_type,
+                "format_valid": format_valid,
+                "validation_notes": validation_notes,
+            }
+        )
+
+
+class ExtractionStarted(BaseEvent):
+    event_type: str = "ExtractionStarted"
+
+    @classmethod
+    def create(
+        cls,
+        package_id: str,
+        document_type: str,
+    ) -> ExtractionStarted:
+        return cls(
+            payload={
+                "package_id": package_id,
+                "document_type": document_type,
+            }
+        )
+
+
+class ExtractionCompleted(BaseEvent):
+    event_type: str = "ExtractionCompleted"
+
+    @classmethod
+    def create(
+        cls,
+        package_id: str,
+        document_type: str,
+        extracted_facts: dict[str, Any],
+    ) -> ExtractionCompleted:
+        return cls(
+            payload={
+                "package_id": package_id,
+                "document_type": document_type,
+                "extracted_facts": extracted_facts,
+            }
+        )
+
+
+class QualityAssessmentCompleted(BaseEvent):
+    event_type: str = "QualityAssessmentCompleted"
+
+    @classmethod
+    def create(
+        cls,
+        package_id: str,
+        quality_score: float,
+        issues: list[str],
+    ) -> QualityAssessmentCompleted:
+        return cls(
+            payload={
+                "package_id": package_id,
+                "quality_score": quality_score,
+                "issues": issues,
+            }
+        )
+
+
+class PackageReadyForAnalysis(BaseEvent):
+    event_type: str = "PackageReadyForAnalysis"
+
+    @classmethod
+    def create(
+        cls,
+        package_id: str,
+        application_id: str,
+    ) -> PackageReadyForAnalysis:
+        return cls(
+            payload={
+                "package_id": package_id,
+                "application_id": application_id,
+            }
+        )
+
+
+# =============================================================================
+# CreditRecord Aggregate Events
+# =============================================================================
+
+class CreditRecordOpened(BaseEvent):
+    event_type: str = "CreditRecordOpened"
+
+    @classmethod
+    def create(
+        cls,
+        application_id: str,
+        agent_id: str,
+        session_id: str,
+    ) -> CreditRecordOpened:
+        return cls(
+            payload={
+                "application_id": application_id,
+                "agent_id": agent_id,
+                "session_id": session_id,
+            }
+        )
+
+
+class HistoricalProfileConsumed(BaseEvent):
+    event_type: str = "HistoricalProfileConsumed"
+
+    @classmethod
+    def create(
+        cls,
+        application_id: str,
+        profile_data_hash: str,
+    ) -> HistoricalProfileConsumed:
+        return cls(
+            payload={
+                "application_id": application_id,
+                "profile_data_hash": profile_data_hash,
+            }
+        )
+
+
+class ExtractedFactsConsumed(BaseEvent):
+    event_type: str = "ExtractedFactsConsumed"
+
+    @classmethod
+    def create(
+        cls,
+        application_id: str,
+        facts_data_hash: str,
+    ) -> ExtractedFactsConsumed:
+        return cls(
+            payload={
+                "application_id": application_id,
+                "facts_data_hash": facts_data_hash,
+            }
+        )
+
+
+class CreditAnalysisDeferred(BaseEvent):
+    event_type: str = "CreditAnalysisDeferred"
+
+    @classmethod
+    def create(
+        cls,
+        application_id: str,
+        reason: str,
+    ) -> CreditAnalysisDeferred:
+        return cls(
+            payload={
+                "application_id": application_id,
+                "reason": reason,
+            }
+        )
+
+
+# =============================================================================
+# FraudScreening Aggregate Events
+# =============================================================================
+
+class FraudScreeningInitiated(BaseEvent):
+    event_type: str = "FraudScreeningInitiated"
+
+    @classmethod
+    def create(
+        cls,
+        application_id: str,
+        agent_id: str,
+        session_id: str,
+    ) -> FraudScreeningInitiated:
+        return cls(
+            payload={
+                "application_id": application_id,
+                "agent_id": agent_id,
+                "session_id": session_id,
+            }
+        )
+
+
+class FraudAnomalyDetected(BaseEvent):
+    event_type: str = "FraudAnomalyDetected"
+
+    @classmethod
+    def create(
+        cls,
+        application_id: str,
+        anomaly_type: str,
+        severity: str,
+        details: str,
+    ) -> FraudAnomalyDetected:
+        return cls(
+            payload={
+                "application_id": application_id,
+                "anomaly_type": anomaly_type,
+                "severity": severity,
+                "details": details,
+            }
+        )
+
+
+# =============================================================================
+# ComplianceRecord Aggregate Events
+# =============================================================================
+
+class ComplianceCheckInitiated(BaseEvent):
+    event_type: str = "ComplianceCheckInitiated"
+
+    @classmethod
+    def create(
+        cls,
+        application_id: str,
+        regulation_set_version: str,
+        checks_required: list[str],
+    ) -> ComplianceCheckInitiated:
+        return cls(
+            payload={
+                "application_id": application_id,
+                "regulation_set_version": regulation_set_version,
+                "checks_required": checks_required,
+            }
+        )
+
+
+class ComplianceCheckCompleted(BaseEvent):
+    event_type: str = "ComplianceCheckCompleted"
+
+    @classmethod
+    def create(
+        cls,
+        application_id: str,
+        all_passed: bool,
+        total_checks: int,
+        passed_count: int,
+        failed_count: int,
+    ) -> ComplianceCheckCompleted:
+        return cls(
+            payload={
+                "application_id": application_id,
+                "all_passed": all_passed,
+                "total_checks": total_checks,
+                "passed_count": passed_count,
+                "failed_count": failed_count,
+            }
+        )
+
+
+class ComplianceRuleNoted(BaseEvent):
+    event_type: str = "ComplianceRuleNoted"
+
+    @classmethod
+    def create(
+        cls,
+        application_id: str,
+        rule_id: str,
+        rule_version: str,
+        note: str,
+    ) -> ComplianceRuleNoted:
+        return cls(
+            payload={
+                "application_id": application_id,
+                "rule_id": rule_id,
+                "rule_version": rule_version,
+                "note": note,
+            }
+        )
+
+
+# =============================================================================
+# LoanApplication Aggregate Events (continued)
+# =============================================================================
+
+class DocumentUploadRequested(BaseEvent):
+    event_type: str = "DocumentUploadRequested"
+
+    @classmethod
+    def create(
+        cls,
+        application_id: str,
+        required_documents: list[str],
+    ) -> DocumentUploadRequested:
+        return cls(
+            payload={
+                "application_id": application_id,
+                "required_documents": required_documents,
+            }
+        )
+
+
+class DocumentUploaded(BaseEvent):
+    event_type: str = "DocumentUploaded"
+
+    @classmethod
+    def create(
+        cls,
+        application_id: str,
+        document_type: str,
+        file_path: str,
+    ) -> DocumentUploaded:
+        return cls(
+            payload={
+                "application_id": application_id,
+                "document_type": document_type,
+                "file_path": file_path,
+            }
+        )
+
+
+class DecisionRequested(BaseEvent):
+    event_type: str = "DecisionRequested"
+
+    @classmethod
+    def create(
+        cls,
+        application_id: str,
+        requested_by: str,
+    ) -> DecisionRequested:
+        return cls(
+            payload={
+                "application_id": application_id,
+                "requested_by": requested_by,
+            }
+        )
+
+
+class FraudScreeningRequested(BaseEvent):
+    event_type: str = "FraudScreeningRequested"
+
+    @classmethod
+    def create(
+        cls,
+        application_id: str,
+        assigned_agent_id: str,
+    ) -> FraudScreeningRequested:
+        return cls(
+            payload={
+                "application_id": application_id,
+                "assigned_agent_id": assigned_agent_id,
+            }
+        )
+
+
+# =============================================================================
 # Event Registry — maps event_type string to class
 # =============================================================================
 
 EVENT_REGISTRY: dict[str, type[BaseEvent]] = {
+    # LoanApplication Aggregate
     "ApplicationSubmitted": ApplicationSubmitted,
     "CreditAnalysisRequested": CreditAnalysisRequested,
     "CreditAnalysisCompleted": CreditAnalysisCompleted,
@@ -615,10 +1123,41 @@ EVENT_REGISTRY: dict[str, type[BaseEvent]] = {
     "HumanReviewCompleted": HumanReviewCompleted,
     "ApplicationApproved": ApplicationApproved,
     "ApplicationDeclined": ApplicationDeclined,
+    "DocumentUploadRequested": DocumentUploadRequested,
+    "DocumentUploaded": DocumentUploaded,
+    "DecisionRequested": DecisionRequested,
+    "FraudScreeningRequested": FraudScreeningRequested,
+    # AgentSession Aggregate
     "AgentSessionStarted": AgentSessionStarted,
     "AgentContextLoaded": AgentContextLoaded,
     "AgentSessionCompleted": AgentSessionCompleted,
     "AgentSessionFailed": AgentSessionFailed,
     "AgentNodeExecuted": AgentNodeExecuted,
+    "AgentInputValidated": AgentInputValidated,
+    "AgentInputValidationFailed": AgentInputValidationFailed,
+    "AgentToolCalled": AgentToolCalled,
+    "AgentOutputWritten": AgentOutputWritten,
+    "AgentSessionRecovered": AgentSessionRecovered,
+    # DocumentPackage Aggregate
+    "DocumentPackageCreated": DocumentPackageCreated,
+    "DocumentAdded": DocumentAdded,
+    "DocumentFormatValidated": DocumentFormatValidated,
+    "ExtractionStarted": ExtractionStarted,
+    "ExtractionCompleted": ExtractionCompleted,
+    "QualityAssessmentCompleted": QualityAssessmentCompleted,
+    "PackageReadyForAnalysis": PackageReadyForAnalysis,
+    # CreditRecord Aggregate
+    "CreditRecordOpened": CreditRecordOpened,
+    "HistoricalProfileConsumed": HistoricalProfileConsumed,
+    "ExtractedFactsConsumed": ExtractedFactsConsumed,
+    "CreditAnalysisDeferred": CreditAnalysisDeferred,
+    # FraudScreening Aggregate
+    "FraudScreeningInitiated": FraudScreeningInitiated,
+    "FraudAnomalyDetected": FraudAnomalyDetected,
+    # ComplianceRecord Aggregate
+    "ComplianceCheckInitiated": ComplianceCheckInitiated,
+    "ComplianceCheckCompleted": ComplianceCheckCompleted,
+    "ComplianceRuleNoted": ComplianceRuleNoted,
+    # AuditLedger Aggregate
     "AuditIntegrityCheckRun": AuditIntegrityCheckRun,
 }
