@@ -84,8 +84,6 @@ apex-ledger/
 ├── docs/
 │   ├── DOMAIN_NOTES.md                     # Graded deliverable (6 domain answers)
 │   ├── DESIGN.md                           # Architectural decisions (6 sections)
-│   ├── FINAL_REPORT.md                     # Final submission report
-│   └── VIDEO_SCRIPT.md                     # Video demo script
 ├── src/
 │   ├── event_store.py                      # EventStore async class
 │   ├── models/events.py                    # 43 event types + exceptions
