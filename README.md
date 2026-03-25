@@ -6,11 +6,16 @@ An event-sourced system for processing commercial loan applications with multi-a
 
 Apex Ledger is the immutable memory and governance backbone for multi-agent AI systems. It provides:
 
-- **Append-only event store** with optimistic concurrency control
-- **Aggregate-based domain logic** (LoanApplication, AgentSession)
-- **CQRS command handlers** with full business rule enforcement
-- **Gas Town pattern** for agent crash recovery
-- **Cryptographic audit chains** for regulatory compliance
+- **Append-only event store** with optimistic concurrency control (PostgreSQL-backed)
+- **4 aggregate boundaries** — LoanApplication, AgentSession, ComplianceRecord, AuditLedger
+- **CQRS** with async projection daemon and 3 read-model projections
+- **43 event types** across 7 aggregate stream types
+- **Gas Town pattern** for agent crash recovery via event replay
+- **Cryptographic audit chains** with SHA-256 hash chain tamper detection
+- **UpcasterRegistry** for transparent event schema evolution
+- **MCP Server** with 8 tools (commands) and 6 resources (queries)
+- **What-If Projector** for counterfactual regulatory scenarios
+- **Regulatory Package Generator** for self-contained examination packages
 
 ## Prerequisites
 
@@ -47,23 +52,27 @@ psql apex_ledger_test < db/schema.sql
 ### 4. Environment Setup
 
 ```bash
-cp .env.example .env
-# Edit .env with your database credentials
-```
-
-Required environment variables:
-```
-DATABASE_URL=postgresql://localhost/apex_ledger
+export DATABASE_URL=postgresql://localhost/apex_ledger
 ```
 
 ### 5. Run Tests
 
 ```bash
 # Run all tests
-pytest tests/ -v
+DATABASE_URL=postgresql://localhost/apex_ledger_test pytest tests/ -v
 
-# Run concurrency test specifically
-pytest tests/test_concurrency.py -v
+# Run specific test suites
+pytest tests/test_concurrency.py -v      # OCC double-decision test
+pytest tests/test_upcasting.py -v        # Upcasting + immutability
+pytest tests/test_projections.py -v      # Projections + daemon
+pytest tests/test_gas_town.py -v         # Crash recovery
+pytest tests/test_mcp_lifecycle.py -v    # Full loan lifecycle
+```
+
+### 6. Start MCP Server
+
+```bash
+python -m src.mcp.server
 ```
 
 ## Project Structure
@@ -71,21 +80,44 @@ pytest tests/test_concurrency.py -v
 ```
 apex-ledger/
 ├── db/
-│   └── schema.sql                  # PostgreSQL schema (events, streams, outbox, snapshots)
-├── src/
-│   ├── __init__.py
-│   ├── event_store.py              # EventStore async class (append, load_stream, load_all)
-│   ├── models/
-│   │   └── events.py               # Pydantic event models, exceptions, state machine
-│   ├── aggregates/
-│   │   ├── loan_application.py     # LoanApplicationAggregate with 6 business rules
-│   │   └── agent_session.py        # AgentSessionAggregate with Gas Town enforcement
-│   └── commands/
-│       └── handlers.py             # Command handlers (submit, credit, fraud, decision, review)
-├── tests/
-│   └── test_concurrency.py         # Double-decision concurrency test
+│   └── schema.sql                          # PostgreSQL schema (5 tables)
 ├── docs/
-│   └── DOMAIN_NOTES.md             # Domain analysis (graded deliverable)
+│   ├── DOMAIN_NOTES.md                     # Graded deliverable (6 domain answers)
+│   ├── DESIGN.md                           # Architectural decisions (6 sections)
+│   ├── FINAL_REPORT.md                     # Final submission report
+│   └── VIDEO_SCRIPT.md                     # Video demo script
+├── src/
+│   ├── event_store.py                      # EventStore async class
+│   ├── models/events.py                    # 43 event types + exceptions
+│   ├── aggregates/
+│   │   ├── loan_application.py             # State machine + 6 business rules
+│   │   ├── agent_session.py                # Gas Town enforcement
+│   │   ├── compliance_record.py            # Compliance check tracking
+│   │   └── audit_ledger.py                 # Hash chain audit trail
+│   ├── commands/handlers.py                # 6 command handlers
+│   ├── projections/
+│   │   ├── daemon.py                       # ProjectionDaemon (fault-tolerant)
+│   │   ├── application_summary.py          # ApplicationSummary projection
+│   │   ├── agent_performance.py            # AgentPerformanceLedger projection
+│   │   └── compliance_audit.py             # ComplianceAuditView (temporal queries)
+│   ├── upcasting/
+│   │   ├── registry.py                     # UpcasterRegistry
+│   │   └── upcasters.py                    # CreditAnalysis + Decision v1→v2
+│   ├── integrity/
+│   │   ├── audit_chain.py                  # SHA-256 hash chain + tamper detection
+│   │   └── gas_town.py                     # Agent crash recovery
+│   ├── mcp/
+│   │   ├── server.py                       # FastMCP server entry point
+│   │   ├── tools.py                        # 8 MCP tools (command side)
+│   │   └── resources.py                    # 6 MCP resources (query side)
+│   ├── what_if/projector.py                # What-If counterfactual projector
+│   └── regulatory/package.py               # Regulatory examination package
+├── tests/
+│   ├── test_concurrency.py                 # 4 OCC tests
+│   ├── test_upcasting.py                   # 4 upcasting + immutability tests
+│   ├── test_projections.py                 # 5 projection + daemon tests
+│   ├── test_gas_town.py                    # 5 crash recovery tests
+│   └── test_mcp_lifecycle.py               # Full lifecycle integration test
 ├── pyproject.toml
 └── README.md
 ```
@@ -94,24 +126,25 @@ apex-ledger/
 
 The system follows Event Sourcing + CQRS:
 
-- **Write side**: Commands -> Aggregates -> Events -> Event Store
-- **Read side**: Event Store -> Projections -> Query APIs (coming in final submission)
-- **Concurrency**: Optimistic concurrency control via `expected_version`
-- **Auditability**: Every decision is an immutable event with causal chains
+- **Write side**: Commands → Command Handlers → Aggregates (validate) → EventStore.append()
+- **Read side**: EventStore → ProjectionDaemon → Projections → MCP Resources
+- **Concurrency**: Optimistic concurrency control via `expected_version` on every append
+- **Auditability**: Every decision is an immutable event with SHA-256 hash chain verification
 
 ## Key Design Decisions
 
-1. **PostgreSQL as event store** — ubiquitous, ACID-compliant, supports LISTEN/NOTIFY
-2. **Separate aggregates per concern** — LoanApplication, AgentSession, ComplianceRecord, AuditLedger prevent write contention
-3. **Gas Town pattern** — agents write session-start events before any work, enabling crash recovery
+1. **PostgreSQL as event store** — ubiquitous, ACID-compliant, supports LISTEN/NOTIFY for real-time subscriptions
+2. **4 separate aggregates** — LoanApplication, AgentSession, ComplianceRecord, AuditLedger prevent write contention between concurrent agents
+3. **Gas Town pattern** — agents write session-start events before any work, enabling crash recovery via stream replay
 4. **Outbox pattern** — events written to outbox in same transaction for guaranteed downstream delivery
+5. **Async projections with SLOs** — ApplicationSummary < 500ms lag, ComplianceAuditView < 2s lag
+6. **UpcasterRegistry** — transparent event schema evolution without mutating stored events
 
-## Interim Submission Status
+## Submission Status
 
 - [x] Phase 1: Event Store Core (schema, EventStore class, OCC)
-- [x] Phase 2: Domain Logic (LoanApplication + AgentSession aggregates, command handlers)
-- [x] Concurrency Test (double-decision test)
-- [ ] Phase 3: Projections & Async Daemon
-- [ ] Phase 4: Upcasting & Integrity
-- [ ] Phase 5: MCP Server
-- [ ] Phase 6: What-If & Regulatory Package
+- [x] Phase 2: Domain Logic (4 aggregates, 6 business rules, 6 command handlers)
+- [x] Phase 3: Projections & Async Daemon (3 projections, fault-tolerant daemon)
+- [x] Phase 4: Upcasting & Integrity (registry, hash chain, Gas Town recovery)
+- [x] Phase 5: MCP Server (8 tools, 6 resources, structured errors)
+- [x] Phase 6: What-If Projector & Regulatory Package (bonus)
